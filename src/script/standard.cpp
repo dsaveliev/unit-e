@@ -8,8 +8,8 @@
 #include <crypto/sha256.h>
 #include <pubkey.h>
 #include <script/script.h>
-#include <util.h>
-#include <utilstrencodings.h>
+#include <util/system.h>
+#include <util/strencodings.h>
 
 
 typedef std::vector<unsigned char> valtype;
@@ -90,7 +90,7 @@ static bool MatchMultisig(const CScript& script, unsigned int& required, std::ve
     return (it + 1 == script.end());
 }
 
-bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
+txnouttype Solver(const CScript& scriptPubKey, std::vector<std::vector<unsigned char>>& vSolutionsRet)
 {
     vSolutionsRet.clear();
 
@@ -98,52 +98,44 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::v
     // it is always OP_HASH160 20 [20 byte hash] OP_EQUAL
     if (scriptPubKey.IsPayToScriptHash())
     {
-        typeRet = TX_SCRIPTHASH;
         std::vector<unsigned char> hashBytes(scriptPubKey.begin()+2, scriptPubKey.begin()+22);
         vSolutionsRet.push_back(hashBytes);
-        return true;
+        return TX_SCRIPTHASH;
     }
 
     if (scriptPubKey.IsFinalizerCommitScript()){
-        typeRet = TX_COMMIT;
         std::vector<unsigned char> hashBytes(scriptPubKey.begin()+1, scriptPubKey.begin()+34);
         vSolutionsRet.push_back(hashBytes);
-        return true;
+        return TX_COMMIT;
     }
 
     WitnessProgram witnessProgram;
     if (scriptPubKey.ExtractWitnessProgram(witnessProgram)) {
         if (witnessProgram.IsPayToPubkeyHash()) {
-            typeRet = TX_WITNESS_V0_KEYHASH;
             vSolutionsRet.push_back(witnessProgram.program[0]);
-            return true;
+            return TX_WITNESS_V0_KEYHASH;
         }
         if (witnessProgram.IsPayToScriptHash()) {
-            typeRet = TX_WITNESS_V0_SCRIPTHASH;
             vSolutionsRet.push_back(witnessProgram.program[0]);
-            return true;
+            return TX_WITNESS_V0_SCRIPTHASH;
         }
         if (witnessProgram.IsRemoteStakingP2WPKH()) {
-            typeRet = TX_WITNESS_V1_REMOTESTAKE_KEYHASH;
             vSolutionsRet.push_back(witnessProgram.program[0]);  // staking pubkey hash
             vSolutionsRet.push_back(witnessProgram.program[1]);  // spending pubkey hash
-            return true;
+            return TX_WITNESS_V1_REMOTESTAKE_KEYHASH;
         }
         if (witnessProgram.IsRemoteStakingP2WSH()) {
-            typeRet = TX_WITNESS_V2_REMOTESTAKE_SCRIPTHASH;
             vSolutionsRet.push_back(witnessProgram.program[0]);  // staking pubkey hash
             vSolutionsRet.push_back(witnessProgram.program[1]);  // spending script hash
-            return true;
+            return TX_WITNESS_V2_REMOTESTAKE_SCRIPTHASH;
         }
         if (witnessProgram.version > 2) {
-            typeRet = TX_WITNESS_UNKNOWN;
             vSolutionsRet.push_back(std::vector<unsigned char>{(unsigned char)witnessProgram.version});
             vSolutionsRet.insert(vSolutionsRet.end(), witnessProgram.program.begin(),
                                  witnessProgram.program.end());
-            return true;
+            return TX_WITNESS_UNKNOWN;
         }
-        typeRet = TX_NONSTANDARD;
-        return false;
+        return TX_NONSTANDARD;
     }
 
     // Provably prunable, data-carrying output
@@ -152,47 +144,39 @@ bool Solver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::v
     // byte passes the IsPushOnly() test we don't care what exactly is in the
     // script.
     if (scriptPubKey.size() >= 1 && scriptPubKey[0] == OP_RETURN && scriptPubKey.IsPushOnly(scriptPubKey.begin()+1)) {
-        typeRet = TX_NULL_DATA;
-        return true;
+        return TX_NULL_DATA;
     }
 
     std::vector<unsigned char> data;
     if (MatchPayToPubkey(scriptPubKey, data)) {
-        typeRet = TX_PUBKEY;
         vSolutionsRet.push_back(std::move(data));
-        return true;
+        return TX_PUBKEY;
     }
 
     if (MatchPayToPubkeyHash(scriptPubKey, data)) {
-        typeRet = TX_PUBKEYHASH;
         vSolutionsRet.push_back(std::move(data));
-        return true;
+        return TX_PUBKEYHASH;
     }
 
     unsigned int required;
     std::vector<std::vector<unsigned char>> keys;
     if (MatchMultisig(scriptPubKey, required, keys)) {
-        typeRet = TX_MULTISIG;
         vSolutionsRet.push_back({static_cast<unsigned char>(required)}); // safe as required is in range 1..16
         vSolutionsRet.insert(vSolutionsRet.end(), keys.begin(), keys.end());
         vSolutionsRet.push_back({static_cast<unsigned char>(keys.size())}); // safe as size is in range 1..16
-        return true;
+        return TX_MULTISIG;
     }
 
     vSolutionsRet.clear();
-    typeRet = TX_NONSTANDARD;
-    return false;
+    return TX_NONSTANDARD;
 }
 
 bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 {
     std::vector<valtype> vSolutions;
-    txnouttype whichType;
-    if (!Solver(scriptPubKey, whichType, vSolutions))
-        return false;
+    txnouttype whichType = Solver(scriptPubKey, vSolutions);
 
-    if (whichType == TX_PUBKEY)
-    {
+    if (whichType == TX_PUBKEY) {
         CPubKey pubKey(vSolutions[0]);
         if (!pubKey.IsValid())
             return false;
@@ -254,11 +238,11 @@ bool ExtractDestination(const CScript& scriptPubKey, CTxDestination& addressRet)
 bool ExtractDestinations(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<CTxDestination>& addressRet, int& nRequiredRet)
 {
     addressRet.clear();
-    typeRet = TX_NONSTANDARD;
     std::vector<valtype> vSolutions;
-    if (!Solver(scriptPubKey, typeRet, vSolutions))
+    typeRet = Solver(scriptPubKey, vSolutions);
+    if (typeRet == TX_NONSTANDARD) {
         return false;
-    if (typeRet == TX_NULL_DATA){
+    } else if (typeRet == TX_NULL_DATA) {
         // This is data, not addresses
         return false;
     }
@@ -370,14 +354,12 @@ CScript GetScriptForMultisig(int nRequired, const std::vector<CPubKey>& keys)
 
 CScript GetScriptForWitness(const CScript& redeemscript)
 {
-    txnouttype typ;
     std::vector<std::vector<unsigned char> > vSolutions;
-    if (Solver(redeemscript, typ, vSolutions)) {
-        if (typ == TX_PUBKEY) {
-            return GetScriptForDestination(WitnessV0KeyHash(Hash160(vSolutions[0].begin(), vSolutions[0].end())));
-        } else if (typ == TX_PUBKEYHASH) {
-            return GetScriptForDestination(WitnessV0KeyHash(vSolutions[0]));
-        }
+    txnouttype typ = Solver(redeemscript, vSolutions);
+    if (typ == TX_PUBKEY) {
+        return GetScriptForDestination(WitnessV0KeyHash(Hash160(vSolutions[0].begin(), vSolutions[0].end())));
+    } else if (typ == TX_PUBKEYHASH) {
+        return GetScriptForDestination(WitnessV0KeyHash(vSolutions[0]));
     }
     return GetScriptForDestination(WitnessV0ScriptHash(redeemscript));
 }
