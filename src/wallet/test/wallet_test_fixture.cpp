@@ -10,6 +10,7 @@
 #include <validation.h>
 #include <wallet/db.h>
 #include <wallet/rpcvalidator.h>
+#include <wallet/rpcwallet.h>
 #include <wallet/rpcwalletext.h>
 #include <consensus/merkle.h>
 #include <test/test_unite_mocks.h>
@@ -28,7 +29,7 @@ WalletTestingSetup::WalletTestingSetup(
     f(settings);
     esperanza::WalletExtensionDeps deps(&settings, &stake_validator_mock);
 
-    m_wallet.reset(new CWallet("mock", WalletDatabase::CreateMock(), deps));
+    m_wallet.reset(new CWallet(*m_chain, WalletLocation(), WalletDatabase::CreateMock(), deps));
     m_wallet->LoadWallet(fFirstRun);
     RegisterValidationInterface(m_wallet.get());
     AddWallet(m_wallet);

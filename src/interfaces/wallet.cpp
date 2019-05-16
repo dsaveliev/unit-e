@@ -105,8 +105,7 @@ WalletTxStatus MakeWalletTxStatus(interfaces::Chain::Lock& locked_chain, const C
     auto mi = ::mapBlockIndex.find(wtx.hashBlock);
     CBlockIndex* block = mi != ::mapBlockIndex.end() ? mi->second : nullptr;
     result.block_height = (block ? block->nHeight : std::numeric_limits<int>::max());
-    // UNIT-E TODO [0.18.0]: Pass locked_chain to GetBlocksToRewardMaturity
-    result.blocks_to_maturity = wtx.GetBlocksToRewardMaturity();
+    result.blocks_to_maturity = wtx.GetBlocksToRewardMaturity(locked_chain);
     result.depth_in_main_chain = wtx.GetDepthInMainChain(locked_chain);
     result.time_received = wtx.nTimeReceived;
     result.lock_time = wtx.tx->nLockTime;
@@ -515,9 +514,17 @@ public:
         : m_chain(chain), m_wallet_filenames(std::move(wallet_filenames))
     {
     }
-    void registerRpcs() override { return RegisterWalletRPCCommands(::tableRPC); }
+    void registerRpcs() override { 
+        RegisterWalletRPCCommands(::tableRPC); 
+        RegisterMnemonicRPCCommands(::tableRPC);
+        RegisterValidatorRPCCommands(::tableRPC);
+        RegisterAdminRPCCommands(::tableRPC);
+        RegisterAddressbookRPCCommands(::tableRPC);
+        RegisterWalletextRPCCommands(::tableRPC);
+        return;
+    }
     bool verify() override { return VerifyWallets(m_chain, m_wallet_filenames); }
-    bool load() override { return LoadWallets(m_chain, m_wallet_filenames); }
+    bool load(const esperanza::WalletExtensionDeps &dependencies) override { return LoadWallets(dependencies, m_chain, m_wallet_filenames); }
     void start(CScheduler& scheduler) override { return StartWallets(scheduler); }
     void flush() override { return FlushWallets(); }
     void stop() override { return StopWallets(); }

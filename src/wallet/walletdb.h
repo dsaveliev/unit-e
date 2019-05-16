@@ -8,6 +8,7 @@
 
 #include <amount.h>
 #include <primitives/transaction.h>
+#include <script/sign.h>
 #include <wallet/db.h>
 #include <key.h>
 
@@ -31,8 +32,6 @@
 
 static const bool DEFAULT_FLUSHWALLET = true;
 
-class CAccount;
-class CAccountingEntry;
 struct CBlockLocator;
 class CKeyPool;
 class CMasterKey;
@@ -67,12 +66,14 @@ public:
     uint32_t nExternalChainCounter;
     uint32_t nInternalChainCounter;
     CKeyID seed_id; //!< seed hash160
-    CKeyID master_key_id; //!< master key hash160
+    KeyOriginInfo key_origin; //!< key origin info with path and fingerprint
+    bool has_key_origin = false; //!< whether the key_origin is useful
     std::vector<CExtPubKey> account_pubkeys; //!< BIP44 account pubkey
     bool is_hardware_device;
 
     static const int VERSION_HD_BASE        = 1;
     static const int VERSION_HD_CHAIN_SPLIT = 2;
+    // UNIT-E TODO [0.18.0]: Should we bump this version?
     static const int VERSION_HD_HW_WALLET   = 3;
     static const int CURRENT_VERSION        = VERSION_HD_HW_WALLET;
     int nVersion;
@@ -88,7 +89,8 @@ public:
         if (this->nVersion >= VERSION_HD_CHAIN_SPLIT)
             READWRITE(nInternalChainCounter);
         if (this->nVersion >= VERSION_HD_HW_WALLET) {
-            READWRITE(master_key_id);
+            READWRITE(key_origin);
+            READWRITE(has_key_origin);
             READWRITE(account_pubkeys);
             READWRITE(is_hardware_device);
         }
@@ -100,7 +102,8 @@ public:
         nExternalChainCounter = 0;
         nInternalChainCounter = 0;
         seed_id.SetNull();
-        master_key_id.SetNull();
+        key_origin.clear();
+        has_key_origin = false;
         account_pubkeys.clear();
         is_hardware_device = false;
     }
@@ -112,12 +115,14 @@ public:
     static const int VERSION_BASIC=1;
     static const int VERSION_WITH_HDDATA=10;
     static const int VERSION_WITH_MASTER_ID=11;
-    static const int CURRENT_VERSION=VERSION_WITH_MASTER_ID;
+    static const int VERSION_WITH_KEY_ORIGIN = 12;
+    static const int CURRENT_VERSION=VERSION_WITH_KEY_ORIGIN;
     int nVersion;
     int64_t nCreateTime; // 0 means unknown
-    std::string hdKeypath; //optional HD/bip32 keypath
-    CKeyID hd_seed_id; //!< seed hash160
-    CKeyID master_key_id; //!< master key hash160
+    std::string hdKeypath; //optional HD/bip32 keypath. Still used to determine whether a key is a seed. Also kept for backwards compatibility
+    CKeyID hd_seed_id; //id of the HD seed used to derive this key
+    KeyOriginInfo key_origin; // Key origin info with path and fingerprint
+    bool has_key_origin = false; //< Whether the key_origin is useful
 
     CKeyMetadata()
     {
@@ -140,9 +145,10 @@ public:
             READWRITE(hdKeypath);
             READWRITE(hd_seed_id);
         }
-        if (this->nVersion >= VERSION_WITH_MASTER_ID)
+        if (this->nVersion >= VERSION_WITH_KEY_ORIGIN)
         {
-            READWRITE(master_key_id);
+            READWRITE(key_origin);
+            READWRITE(has_key_origin);
         }
     }
 
@@ -152,7 +158,8 @@ public:
         nCreateTime = 0;
         hdKeypath.clear();
         hd_seed_id.SetNull();
-        master_key_id.SetNull();
+        key_origin.clear();
+        has_key_origin = false;
     }
 };
 
@@ -205,7 +212,7 @@ public:
     bool WriteTx(const CWalletTx& wtx);
     bool EraseTx(uint256 hash);
 
-    bool WriteKeyMetadata(const CPubKey& vchPubKey, const CKeyMetadata& keyMeta, bool overwrite = true);
+    bool WriteKeyMetadata(const CKeyMetadata& meta, const CPubKey& pubkey, const bool overwrite = true);
     bool WriteKey(const CPubKey& vchPubKey, const CPrivKey& vchPrivKey, const CKeyMetadata &keyMeta);
     bool WriteCryptedKey(const CPubKey& vchPubKey, const std::vector<unsigned char>& vchCryptedSecret, const CKeyMetadata &keyMeta);
     bool WriteMasterKey(unsigned int nID, const CMasterKey& kMasterKey);
@@ -226,20 +233,10 @@ public:
 
     bool WriteMinVersion(int nVersion);
 
-    /// This writes directly to the database, and will not update the CWallet's cached accounting entries!
-    /// Use wallet.AddAccountingEntry instead, to write *and* update its caches.
-    bool WriteAccountingEntry(const uint64_t nAccEntryNum, const CAccountingEntry& acentry);
-    bool ReadAccount(const std::string& strAccount, CAccount& account);
-    bool WriteAccount(const std::string& strAccount, const CAccount& account);
-    bool EraseAccount(const std::string& strAccount);
-
     /// Write destination data key,value tuple to database
     bool WriteDestData(const std::string &address, const std::string &key, const std::string &value);
     /// Erase destination data tuple from wallet database
     bool EraseDestData(const std::string &address, const std::string &key);
-
-    CAmount GetAccountCreditDebit(const std::string& strAccount);
-    void ListAccountCreditDebit(const std::string& strAccount, std::list<CAccountingEntry>& acentries);
 
     DBErrors LoadWallet(CWallet* pwallet);
     DBErrors FindWalletTx(std::vector<uint256>& vTxHash, std::vector<CWalletTx>& vWtx);

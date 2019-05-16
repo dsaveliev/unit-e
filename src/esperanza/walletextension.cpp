@@ -52,13 +52,14 @@ void WalletExtension::ForEachStakeableCoin(Callable f) const {
   AssertLockHeld(cs_main);
   AssertLockHeld(m_enclosing_wallet.cs_wallet);  // access to mapWallet
 
+  auto locked_chain = m_enclosing_wallet.chain().lock();
   CCoinsViewCache view(pcoinsTip.get());  // requires cs_main
   for (const auto &it : m_enclosing_wallet.mapWallet) {
     const CWalletTx *const tx = &it.second;
     const uint256 &txId = tx->GetHash();
     const std::vector<::CTxOut> &coins = tx->tx->vout;
     const CBlockIndex *containing_block = nullptr;
-    const int depth = tx->GetDepthInMainChain(containing_block);  // requires cs_main
+    const int depth = tx->GetDepthInMainChain(*locked_chain);  // requires cs_main
     if (depth <= 0 || !containing_block) {
       // transaction is not included in a block
       continue;
@@ -69,7 +70,7 @@ void WalletExtension::ForEachStakeableCoin(Callable f) const {
       continue;
     }
 
-    const bool skip_reward = tx->IsCoinBase() && tx->GetBlocksToRewardMaturity() > 0;
+    const bool skip_reward = tx->IsCoinBase() && tx->GetBlocksToRewardMaturity(*locked_chain) > 0;
     for (std::size_t out_index = skip_reward ? 1 : 0; out_index < coins.size(); ++out_index) {
       if (m_enclosing_wallet.IsSpent(txId, static_cast<unsigned int>(out_index))) {
         continue;

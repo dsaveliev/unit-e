@@ -10,7 +10,7 @@
 #include <hash.h>
 #include <serialize.h>
 #include <uint256.h>
-#include <utilstrencodings.h>
+#include <util/strencodings.h>
 
 #include <stdexcept>
 #include <vector>

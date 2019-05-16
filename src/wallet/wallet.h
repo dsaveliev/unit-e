@@ -47,7 +47,8 @@ struct VoteRecord;
 bool VerifyWallets(interfaces::Chain& chain, const std::vector<std::string>& wallet_files);
 
 //! Load wallet databases.
-bool LoadWallets(interfaces::Chain& chain, const std::vector<std::string>& wallet_files);
+bool LoadWallets(const esperanza::WalletExtensionDeps& dependencies,
+                 interfaces::Chain& chain, const std::vector<std::string>& wallet_files);
 
 //! Complete startup of wallets.
 void StartWallets(CScheduler& scheduler);
@@ -327,13 +328,7 @@ public:
      *  0 : is not a coinbase transaction, or is a mature coinbase transaction
      * >0 : is a coinbase transaction which matures in this many blocks
      */
-    // UNIT-E TODO [0.18.0]: Get rid of this method in favor of GetBlocksToRewardMaturity
-    int GetBlocksToMaturity(interfaces::Chain::Lock& locked_chain) const;
-    // UNIT-E TODO [0.18.0]: Replace these guys with a new GetDepthInMainChain(locked_chain)
-    int GetDepthInMainChain() const { const CBlockIndex *block_index; return GetDepthInMainChain(block_index); }
-    int GetDepthInMainChain(const CBlockIndex * &block_index) const;
-    // UNIT-E TODO [0.18.0]: Provide locked_chain as argument
-    int GetBlocksToRewardMaturity() const;
+    int GetBlocksToRewardMaturity(interfaces::Chain::Lock& locked_chain) const;
 
     bool hashUnset() const { return (hashBlock.IsNull() || hashBlock == ABANDON_HASH); }
     bool isAbandoned() const { return (hashBlock == ABANDON_HASH); }
@@ -1175,7 +1170,7 @@ public:
 
     /* Initializes the wallet, returns a new CWallet instance or a null pointer in case of an error */
     // UNIT-E TODO [0.18.0] Update implementation
-    static std::shared_ptr<CWallet> CreateWalletFromFile(const esperanza::WalletExtensionDeps&,
+    static std::shared_ptr<CWallet> CreateWalletFromFile(const esperanza::WalletExtensionDeps& dependencies,
                                                          interfaces::Chain& chain, const WalletLocation& location, uint64_t wallet_creation_flags = 0);
 
     /**

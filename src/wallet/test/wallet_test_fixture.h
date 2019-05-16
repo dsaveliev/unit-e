@@ -8,6 +8,8 @@
 #include <test/test_unite.h>
 #include <test/test_unite_mocks.h>
 
+#include <interfaces/chain.h>
+#include <interfaces/wallet.h>
 #include <wallet/wallet.h>
 
 #include <memory>
@@ -27,6 +29,8 @@ struct WalletTestingSetup : public TestingSetup {
 
   Settings settings;
   std::shared_ptr<CWallet> m_wallet;
+  std::unique_ptr<interfaces::Chain> m_chain = interfaces::MakeChain();
+  std::unique_ptr<interfaces::Chain::Lock> m_locked_chain = m_chain->assumeLocked();  // Temporary. Removed in upcoming lock cleanup
   mocks::StakeValidatorMock stake_validator_mock;
 };
 
