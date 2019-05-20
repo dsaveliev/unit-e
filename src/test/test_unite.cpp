@@ -26,18 +26,21 @@
 
 void CConnmanTest::AddNode(CNode& node, CConnman* connman)
 {
-    LOCK(connman->cs_vNodes);
-    connman->vNodes.push_back(&node);
+    LOCK(cs_vNodes);
+    vNodes.push_back(&node);
 }
 
 void CConnmanTest::ClearNodes(CConnman* connman)
 {
-    LOCK(connman->cs_vNodes);
-    connman->vNodes.clear();
+    LOCK(cs_vNodes);
+    for (CNode* node : vNodes) {
+        delete node;
+    }
+    vNodes.clear();
 }
 
 void CConnmanTest::StartThreadMessageHandler(CConnman* connman) {
-  connman->ThreadMessageHandler();
+    ThreadMessageHandler();
 }
 
 void SelectNetwork(const std::string& network_name) {

@@ -4,18 +4,21 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <chainparams.h>
-#include <consensus/merkle.h>
 
+#include <chainparamsseeds.h>
+#include <consensus/merkle.h>
 #include <tinyformat.h>
-#include <util.h>
-#include <utilstrencodings.h>
-#include <utilmoneystr.h>
+#include <util/system.h>
+#include <util/strencodings.h>
+#include <util/moneystr.h>
 #include <ufp64.h>
+#include <versionbitsinfo.h>
 
 #include <assert.h>
 #include <memory>
 
-#include <chainparamsseeds.h>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 void CChainParams::UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout)
 {
@@ -65,6 +68,10 @@ public:
         fDefaultConsistencyChecks = false;
         fRequireStandard = false;
 
+        // UNIT-E TODO [0.18.0]: Setup proper values
+        m_assumed_blockchain_size = 30;
+        m_assumed_chain_state_size = 2;
+
         chainTxData = ChainTxData{
             0,
             0,
@@ -112,6 +119,10 @@ public:
         fDefaultConsistencyChecks = true;
         fRequireStandard = false;
 
+        // UNIT-E TODO [0.18.0]: Setup proper values
+        m_assumed_blockchain_size = 0;
+        m_assumed_chain_state_size = 0;
+
         chainTxData = ChainTxData{
             0,
             0,
@@ -133,7 +144,7 @@ const CChainParams &Params() {
     return *globalChainParams;
 }
 
-std::unique_ptr<CChainParams> CreateChainParams(Dependency<blockchain::Behavior> blockchain_behavior, const std::string& chain)
+std::unique_ptr<const CChainParams> CreateChainParams(Dependency<blockchain::Behavior> blockchain_behavior, const std::string& chain)
 {
     if (chain == CBaseChainParams::TESTNET)
         return std::unique_ptr<CChainParams>(new CTestNetParams(blockchain_behavior->GetParameters()));
@@ -142,7 +153,7 @@ std::unique_ptr<CChainParams> CreateChainParams(Dependency<blockchain::Behavior>
     throw std::runtime_error(strprintf("%s: Unknown chain %s.", __func__, chain));
 }
 
-std::unique_ptr<CChainParams> CreateChainParams(const std::string& chain)
+std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain)
 {
   std::unique_ptr<blockchain::Behavior> blockchain_behavior;
   if (chain == CBaseChainParams::TESTNET) {
@@ -166,9 +177,4 @@ void SelectParams(const std::string& network)
 {
     SelectBaseParams(network);
     globalChainParams = CreateChainParams(network);
-}
-
-void UpdateVersionBitsParameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout)
-{
-    globalChainParams->UpdateVersionBitsParameters(d, nStartTime, nTimeout);
 }

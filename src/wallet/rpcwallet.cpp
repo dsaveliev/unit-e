@@ -2590,6 +2590,8 @@ static UniValue loadwallet(const JSONRPCRequest& request)
     std::shared_ptr<CWallet> const wallet = LoadWallet(*g_rpc_interfaces->chain, location, error, warning);
     if (!wallet) throw JSONRPCError(RPC_WALLET_ERROR, error);
 
+    wallet->postInitProcess(GetScheduler());
+
     UniValue obj(UniValue::VOBJ);
     obj.pushKV("name", wallet->GetName());
     obj.pushKV("warning", warning);

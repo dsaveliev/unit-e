@@ -1,4 +1,4 @@
-// Copyright (c) 2011-2017 The Bitcoin Core developers
+// Copyright (c) 2011-2018 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -9,7 +9,7 @@
 #include <key.h>
 #include <key_io.h>
 #include <script/script.h>
-#include <utilstrencodings.h>
+#include <util/strencodings.h>
 #include <test/test_unite.h>
 
 #include <boost/test/unit_test.hpp>
@@ -108,7 +108,7 @@ BOOST_AUTO_TEST_CASE(key_io_valid_gen)
         } else {
             CTxDestination dest;
             CScript exp_script(exp_payload.begin(), exp_payload.end());
-            ExtractDestination(exp_script, dest);
+            BOOST_CHECK(ExtractDestination(exp_script, dest));
             std::string address = EncodeDestination(dest);
 
             BOOST_CHECK_EQUAL(address, exp_base58string);
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(key_io_invalid)
         std::string exp_base58string = test[0].get_str();
 
         // must be invalid as public and as private key
-        for (auto chain : { CBaseChainParams::TESTNET, CBaseChainParams::REGTEST }) {
+        for (const auto& chain : { CBaseChainParams::TESTNET, CBaseChainParams::REGTEST }) {
             SelectParams(GetComponent<blockchain::Behavior>(), chain);
             destination = DecodeDestination(exp_base58string);
             BOOST_CHECK_MESSAGE(!IsValidDestination(destination), "IsValid pubkey in mainnet:" + strTest);

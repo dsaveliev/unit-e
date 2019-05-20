@@ -35,7 +35,7 @@ BOOST_FIXTURE_TEST_SUITE(validation_block_tests, TestChain100NoFinalizationSetup
 struct TestSubscriber : public CValidationInterface {
     uint256 m_expected_tip;
 
-    TestSubscriber(uint256 tip) : m_expected_tip(tip) {}
+    explicit TestSubscriber(uint256 tip) : m_expected_tip(tip) {}
 
     void UpdatedBlockTip(const CBlockIndex* pindexNew, const CBlockIndex* pindexFork, bool fInitialDownload) override
     {
@@ -133,8 +133,8 @@ void BuildChain(const BlockData &root, int height, const unsigned int invalid_ra
 {
     if (height <= 0 || blocks.size() >= max_size) return;
 
-    bool gen_invalid = GetRand(100) < invalid_rate;
-    bool gen_fork = GetRand(100) < branch_rate;
+    bool gen_invalid = InsecureRandRange(100) < invalid_rate;
+    bool gen_fork = InsecureRandRange(100) < branch_rate;
 
     const BlockData blockData = gen_invalid ? BadBlock(root) : GoodBlock(root);
     blocks.push_back(blockData.block);
@@ -193,7 +193,7 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     BOOST_CHECK(ProcessNewBlockHeaders(headers, state, Params()));
 
     // Connect the genesis block and drain any outstanding events
-    ProcessNewBlock(Params(), std::make_shared<CBlock>(Params().GenesisBlock()), true, &ignored);
+    BOOST_CHECK(ProcessNewBlock(Params(), std::make_shared<CBlock>(Params().GenesisBlock()), true, &ignored));
     SyncWithValidationInterfaceQueue();
 
     // subscribe to events (this subscriber will validate event ordering)
@@ -208,7 +208,7 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
     // create a bunch of threads that repeatedly process a block generated above at random
     // this will create parallelism and randomness inside validation - the ValidationInterface
     // will subscribe to events generated during block validation and assert on ordering invariance
-    boost::thread_group threads;
+    std::vector<std::thread> threads;
     // boost unit test is not thread safe as the checks record the results in some shared memory
     // which is not synchronized / does not happen under mutual exclusion.
     std::mutex cs;
@@ -217,10 +217,11 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
       BOOST_CHECK(condition);
     };
     for (int i = 0; i < 10; i++) {
-        threads.create_thread([&]() {
+        threads.emplace_back([&]() {
             bool ignored;
+            FastRandomContext insecure;
             for (int i = 0; i < 1000; i++) {
-                auto block = blocks[GetRand(blocks.size() - 1)];
+                auto block = blocks[insecure.randrange(blocks.size() - 1)];
                 bool processed = ProcessNewBlock(Params(), block, true, &ignored);
                 check(processed);
             }
@@ -235,7 +236,9 @@ BOOST_AUTO_TEST_CASE(processnewblock_signals_ordering)
         });
     }
 
-    threads.join_all();
+    for (auto& t : threads) {
+        t.join();
+    }
     while (GetMainSignals().CallbacksPending() > 0) {
         MilliSleep(100);
     }

@@ -118,12 +118,12 @@ namespace BCLog {
 
 } // namespace BCLog
 
-extern BCLog::Logger* const g_logger;
+BCLog::Logger& LogInstance();
 
 /** Return true if log accepts specified category */
 static inline bool LogAcceptCategory(BCLog::LogFlags category)
 {
-    return g_logger->WillLogCategory(category);
+    return LogInstance().WillLogCategory(category);
 }
 
 /** Returns a string with the log categories. */
@@ -150,14 +150,14 @@ static inline void LogPrint(const BCLog::LogFlags category, const char *const fm
       /* Original format string will have newline so don't add one here */
       log_msg = "Error \"" + std::string(fmterr.what()) + "\" while formatting log message: " + fmt;
     }
-    g_logger->LogPrintStr(log_msg, category);
+    LogInstance().LogPrintStr(log_msg, category);
   }
 }
 
 template <typename... Args>
 static inline void LogPrintf(const char *const fmt, const Args&... args)
 {
-  if (g_logger->Enabled()) {
+  if (LogInstance().Enabled()) {
     LogPrint(BCLog::NONE, fmt, args...);
   }
 }

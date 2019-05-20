@@ -8,7 +8,9 @@
 
 
 /**
- * Name of client reported in the 'version' message.
+ * Name of client reported in the 'version' message. Report the same name
+ * for unit-e, to make it harder for attackers to
+ * target servers users specifically.
  */
 const std::string CLIENT_NAME("Feuerland");
 
