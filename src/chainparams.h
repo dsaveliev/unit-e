@@ -56,6 +56,10 @@ public:
     bool DefaultConsistencyChecks() const { return fDefaultConsistencyChecks; }
     /** Policy: Filter transactions that do not match well-defined patterns */
     bool RequireStandard() const { return fRequireStandard; }
+    /** Minimum free space (in GB) needed for data directory */
+    uint64_t AssumedBlockchainSize() const { return m_assumed_blockchain_size; }
+    /** Minimum free space (in GB) needed for data directory when pruned; Does not include prune target*/
+    uint64_t AssumedChainStateSize() const { return m_assumed_chain_state_size; }
     /** Make miner stop after a block is found. In RPC, don't return until nGenProcLimit blocks are generated */
     bool MineBlocksOnDemand() const { return parameters.mine_blocks_on_demand; }
     /** Return the BIP70 network string (main, test or regtest) */
@@ -75,6 +79,8 @@ protected:
 
     Consensus::Params consensus;
     snapshot::Params snapshotParams;
+    uint64_t m_assumed_blockchain_size;
+    uint64_t m_assumed_chain_state_size;
     std::vector<std::string> vSeeds;
     CBlock genesis;
     std::vector<SeedSpec6> vFixedSeeds;
@@ -89,8 +95,8 @@ protected:
  * @returns a CChainParams* of the chosen chain.
  * @throws a std::runtime_error if the chain is not supported.
  */
-std::unique_ptr<CChainParams> CreateChainParams(Dependency<blockchain::Behavior>, const std::string& chain);
-std::unique_ptr<CChainParams> CreateChainParams(const std::string& chain);
+std::unique_ptr<const CChainParams> CreateChainParams(Dependency<blockchain::Behavior>, const std::string& chain);
+std::unique_ptr<const CChainParams> CreateChainParams(const std::string& chain);
 
 /**
  * Return the currently selected parameters. This won't change after app

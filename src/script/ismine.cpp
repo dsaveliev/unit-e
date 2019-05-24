@@ -23,9 +23,9 @@ namespace {
  */
 enum class IsMineSigVersion
 {
-    TOP = 0,        //! scriptPubKey execution
-    P2SH = 1,       //! P2SH redeemScript
-    WITNESS_V0 = 2  //! P2WSH witness script execution
+    TOP = 0,        //!< scriptPubKey execution
+    P2SH = 1,       //!< P2SH redeemScript
+    WITNESS_V0 = 2, //!< P2WSH witness script execution
 };
 
 /**
@@ -35,19 +35,19 @@ enum class IsMineSigVersion
  */
 enum class IsMineResult
 {
-    NO = 0,          //! Not ours
-    WATCH_ONLY = 1,  //! Included in watch-only balance
-    SPENDABLE = 2,   //! Included in all balances
-    HW_DEVICE = 6,   //! Stored in a hardware wallet
-    INVALID = 7,     //! Not spendable by anyone (uncompressed pubkey in segwit, P2SH inside P2SH or witness, witness inside witness)
+    NO = 0,         //!< Not ours
+    WATCH_ONLY = 1, //!< Included in watch-only balance
+    SPENDABLE = 2,  //!< Included in all balances
+    HW_DEVICE = 6,  //!< Stored in a hardware wallet
+    INVALID = 7,    //!< Not spendable by anyone (uncompressed pubkey in segwit, P2SH inside P2SH or witness, witness inside witness)
 };
 
 struct IsMineInfo
 {
-  txnouttype type;
-  txnouttype p2sh_type;
-  std::vector<std::vector<unsigned char>> solutions;
-  std::vector<std::vector<unsigned char>> p2sh_solutions;
+    txnouttype type;
+    txnouttype p2sh_type;
+    std::vector<std::vector<unsigned char>> solutions;
+    std::vector<std::vector<unsigned char>> p2sh_solutions;
 };
 
 bool PermitsUncompressed(IsMineSigVersion sigversion)
@@ -86,8 +86,7 @@ IsMineResult IsMineInner(const CKeyStore& keystore, const CScript& scriptPubKey,
     IsMineResult ret = IsMineResult::NO;
 
     std::vector<valtype> vSolutions;
-    txnouttype whichType;
-    Solver(scriptPubKey, whichType, vSolutions);
+    txnouttype whichType = Solver(scriptPubKey, vSolutions);
 
     CKeyID keyID;
     switch (whichType)
@@ -351,7 +350,8 @@ bool IsStakedRemotely(const CKeyStore &keystore, const CScript &script_pub_key)
     std::vector<valtype> solutions;
     txnouttype which_type;
 
-    if (!Solver(script_pub_key, which_type, solutions)) {
+    which_type = Solver(script_pub_key, solutions);
+    if (which_type == TX_NONSTANDARD) {
         return false;
     }
 

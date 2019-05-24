@@ -300,8 +300,9 @@ UniValue sendtypeto(const JSONRPCRequest &request) {
   CReserveKey keyChange(pwallet);
   int changePosRet = -1;
   std::string failReason;
+  auto locked_chain = pwallet->chain().lock();
   bool created = pwallet->CreateTransaction(
-      vecSend, wtx, keyChange, feeRet, changePosRet, failReason, coinControl);
+      *locked_chain, vecSend, wtx, keyChange, feeRet, changePosRet, failReason, coinControl);
   if (!created) {
     throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, failReason);
   }
@@ -320,7 +321,7 @@ UniValue sendtypeto(const JSONRPCRequest &request) {
   }
 
   CValidationState state;
-  if (!pwallet->CommitTransaction(wtx, map_value, {}, {}, keyChange, g_connman.get(), state)) {
+  if (!pwallet->CommitTransaction(wtx, map_value, {}, keyChange, g_connman.get(), state)) {
     throw JSONRPCError(
         RPC_WALLET_ERROR,
         strprintf("Transaction commit failed: %s", FormatStateMessage(state)));
@@ -436,7 +437,7 @@ static UniValue stakeat(const JSONRPCRequest &request) {
   }
 
   CValidationState state;
-  if (!pwallet->CommitTransaction(wtx, {}, {}, {}, key_change, g_connman.get(), state)) {
+  if (!pwallet->CommitTransaction(wtx, {}, {}, key_change, g_connman.get(), state)) {
     throw JSONRPCError(
         RPC_WALLET_ERROR,
         strprintf("Transaction commit failed: %s", FormatStateMessage(state)));
@@ -454,7 +455,7 @@ static bool OutputToJSON(UniValue &output, const COutputEntry &o,
     output.pushKV("narration", mvi->second);
   }
   if (IsValidDestination(o.destination)) {
-    output.push_back(Pair("address", EncodeDestination(o.destination)));
+    output.pushKV("address", EncodeDestination(o.destination));
   }
 
   if (::IsMine(*pwallet, o.destination) & ISMINE_WATCH_ONLY) {
@@ -489,8 +490,8 @@ static bool OutputsContain(const UniValue &outputs, const std::string &search) {
   return false;
 }
 
-static bool TxWithOutputsToJSON(const CWalletTx &wtx, CWallet *const pwallet,
-                                const isminefilter &watchonly,
+static bool TxWithOutputsToJSON(interfaces::Chain::Lock &locked_chain, const CWalletTx &wtx,
+                                CWallet *const pwallet, const isminefilter &watchonly,
                                 const std::string &search, UniValue &result) {
   UniValue entry(UniValue::VOBJ);
 
@@ -501,7 +502,7 @@ static bool TxWithOutputsToJSON(const CWalletTx &wtx, CWallet *const pwallet,
   CAmount amount = 0;
   std::string sent_account;
 
-  wtx.GetAmounts(list_received, list_sent, fee, sent_account, ISMINE_ALL);
+  wtx.GetAmounts(list_received, list_sent, fee, ISMINE_ALL);
 
   if (wtx.IsFromMe(ISMINE_WATCH_ONLY) && !(watchonly & ISMINE_WATCH_ONLY)) {
     return false;
@@ -515,7 +516,7 @@ static bool TxWithOutputsToJSON(const CWalletTx &wtx, CWallet *const pwallet,
   if (!sent_account.empty()) {
     entry.pushKV("account", sent_account);
   }
-  WalletTxToJSON(wtx, entry);
+  WalletTxToJSON(pwallet->chain(), locked_chain, wtx, entry);
 
   if (!list_sent.empty()) {
     entry.pushKV("abandoned", wtx.isAbandoned());
@@ -556,9 +557,9 @@ static bool TxWithOutputsToJSON(const CWalletTx &wtx, CWallet *const pwallet,
   }
 
   if (wtx.IsCoinBase()) {
-    if (!wtx.IsInMainChain()) {
+    if (!wtx.IsInMainChain(locked_chain)) {
       entry.pushKV("category", "orphan");
-    } else if (wtx.GetBlocksToRewardMaturity() > 0) {
+    } else if (wtx.GetBlocksToRewardMaturity(locked_chain) > 0) {
       entry.pushKV("category", "immature");
     } else {
       entry.pushKV("category", "coinbase");
@@ -765,10 +766,12 @@ UniValue filtertransactions(const JSONRPCRequest &request) {
     LOCK2(cs_main, pwallet->cs_wallet);
     LOCK(fin_repo->GetLock());
 
+    auto locked_chain = pwallet->chain().lock();
+
     // transaction processing
     const CWallet::TxItems &txOrdered = pwallet->wtxOrdered;
     for (auto tit = txOrdered.rbegin(); tit != txOrdered.rend(); ++tit) {
-      CWalletTx *const pwtx = tit->second.first;
+      CWalletTx *const pwtx = tit->second;
       int64_t txTime = pwtx->GetTxTime();
       if (txTime < timeFrom) {
         break;
@@ -777,7 +780,7 @@ UniValue filtertransactions(const JSONRPCRequest &request) {
       UniValue entry;
       bool match_filter = false;
       if (txTime <= timeTo) {
-        match_filter = TxWithOutputsToJSON(*pwtx, pwallet, watchonly, search, entry);
+        match_filter = TxWithOutputsToJSON(*locked_chain, *pwtx, pwallet, watchonly, search, entry);
       }
       if (!match_filter) {
         continue;
@@ -786,7 +789,7 @@ UniValue filtertransactions(const JSONRPCRequest &request) {
       // Get the transaction finalization state
       const CBlockIndex *block_index = nullptr;
       bool finalized = false;
-      if (pwtx->GetDepthInMainChain(block_index) > 0) {
+      if (pwtx->GetDepthInMainChain(*locked_chain) > 0) {
         const finalization::FinalizationState *tip_fin_state = fin_repo->GetTipState();
         assert(tip_fin_state != nullptr);
         finalized = tip_fin_state->GetLastFinalizedEpoch() >= tip_fin_state->GetEpoch(*block_index);

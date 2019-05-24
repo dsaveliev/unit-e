@@ -61,7 +61,8 @@ class InvalidBlockRequestTest(UnitETestFramework):
         block1 = block
         tip = block.sha256
         node.p2p.send_blocks_and_test([block1], node, success=True)
-        height += 1
+        # UNIT-E TODO [0.18.0]: Deleted in 0.18
+        # height += 1
 
         self.log.info("Mature the block.")
 
@@ -116,7 +117,7 @@ class InvalidBlockRequestTest(UnitETestFramework):
         assert_equal(orig_hash, block2.rehash())
         assert block2_orig.vtx != block2.vtx
 
-        node.p2p.send_blocks_and_test([block2], node, success=False, reject_code=16, reject_reason=b'bad-txns-duplicate')
+        node.p2p.send_blocks_and_test([block2], node, success=False, reject_reason='bad-txns-duplicate')
 
         # Check transactions for duplicate inputs
         self.log.info("Test duplicate input block.")
@@ -126,7 +127,7 @@ class InvalidBlockRequestTest(UnitETestFramework):
         block2_orig.ensure_ltor()
         block2_orig.compute_merkle_trees()
         block2_orig.solve()
-        node.p2p.send_blocks_and_test([block2_orig], node, success=False, reject_reason=b'bad-txns-inputs-duplicate')
+        node.p2p.send_blocks_and_test([block2_orig], node, success=False, reject_reason='bad-txns-inputs-duplicate')
 
         self.log.info("Test very broken block.")
 
@@ -140,7 +141,8 @@ class InvalidBlockRequestTest(UnitETestFramework):
         block3.compute_merkle_trees()
         block3.solve()
 
-        node.p2p.send_blocks_and_test([block3], node, success=False, reject_code=16, reject_reason=b'bad-cb-amount')
+        node.p2p.send_blocks_and_test([block3], node, success=False, reject_reason='bad-cb-amount')
+
 
 if __name__ == '__main__':
     InvalidBlockRequestTest().main()

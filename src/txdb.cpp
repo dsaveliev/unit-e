@@ -10,7 +10,7 @@
 #include <random.h>
 #include <shutdown.h>
 #include <uint256.h>
-#include <util.h>
+#include <util/system.h>
 #include <ui_interface.h>
 
 #include <stdint.h>
@@ -18,6 +18,7 @@
 #include <boost/thread.hpp>
 
 static const char DB_UNIT = 'C';
+static const char DB_UNITS = 'c';
 static const char DB_BLOCK_FILES = 'f';
 static const char DB_BLOCK_INDEX = 'b';
 

@@ -35,14 +35,14 @@ SetupDummyInputs(CBasicKeyStore& keystoreRet, CCoinsViewCache& coinsRet)
     dummyTransactions[0].vout[0].scriptPubKey << ToByteVector(key[0].GetPubKey()) << OP_CHECKSIG;
     dummyTransactions[0].vout[1].nValue = 50 * EEES;
     dummyTransactions[0].vout[1].scriptPubKey << ToByteVector(key[1].GetPubKey()) << OP_CHECKSIG;
-    AddCoins(coinsRet, dummyTransactions[0], 0);
+    AddCoins(coinsRet, CTransaction(dummyTransactions[0]), 0);
 
     dummyTransactions[1].vout.resize(2);
     dummyTransactions[1].vout[0].nValue = 21 * EEES;
     dummyTransactions[1].vout[0].scriptPubKey = GetScriptForDestination(key[2].GetPubKey().GetID());
     dummyTransactions[1].vout[1].nValue = 22 * EEES;
     dummyTransactions[1].vout[1].scriptPubKey = GetScriptForDestination(key[3].GetPubKey().GetID());
-    AddCoins(coinsRet, dummyTransactions[1], 0);
+    AddCoins(coinsRet, CTransaction(dummyTransactions[1]), 0);
 
     return dummyTransactions;
 }
@@ -76,10 +76,11 @@ static void CCoinsCaching(benchmark::State& state)
     t1.vout[0].scriptPubKey << OP_1;
 
     // Benchmark.
+    const CTransaction tx_1(t1);
     while (state.KeepRunning()) {
-        bool success = AreInputsStandard(t1, coins);
+        bool success = AreInputsStandard(tx_1, coins);
         assert(success);
-        CAmount value = coins.GetValueIn(t1);
+        CAmount value = coins.GetValueIn(tx_1);
         assert(value == (50 + 21 + 22) * EEES);
     }
 }

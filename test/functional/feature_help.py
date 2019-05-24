@@ -3,7 +3,6 @@
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Verify that starting unite with -h works as expected."""
-import subprocess
 
 from test_framework.test_framework import UnitETestFramework
 from test_framework.util import assert_equal
@@ -51,7 +50,7 @@ class HelpTest(UnitETestFramework):
         self.log.info("Version text received: {} (...)".format(output[0:60]))
 
         # Test that arguments not in the help results in an error
-        self.log.info("Start united with -fakearg to make sure it does not start")
+        self.log.info("Start unit-e with -fakearg to make sure it does not start")
         self.nodes[0].start(extra_args=['-fakearg'])
         # Node should exit immediately and output an error to stderr
         _, output = self.get_node_output(ret_code_expected=1)

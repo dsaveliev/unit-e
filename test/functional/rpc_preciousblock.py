@@ -50,6 +50,7 @@ class PreciousTest(UnitETestFramework):
         self.setup_clean_chain = True
         self.num_nodes = 3
 
+    # UNIT-E TODO [0.18.0]: Deleted
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
@@ -65,18 +66,19 @@ class PreciousTest(UnitETestFramework):
         wait_until(lambda: all(self.nodes[i].p2p.got_verack() for i in range(self.num_nodes)), timeout=10)
 
         self.log.info("Ensure submitblock can in principle reorg to a competing chain")
-        self.nodes[0].generate(1)
+        gen_address = lambda i: self.nodes[i].get_deterministic_priv_key().address  # A non-wallet address to mine to
+        self.nodes[0].generatetoaddress(1, gen_address(0))
         assert_equal(self.nodes[0].getblockcount(), 1)
-        hashZ = self.nodes[1].generate(2)[-1]
+        hashZ = self.nodes[1].generatetoaddress(2, gen_address(1))[-1]
         assert_equal(self.nodes[1].getblockcount(), 2)
         node_sync_via_rpc(self.nodes[0:3])
         assert_equal(self.nodes[0].getbestblockhash(), hashZ)
 
         self.log.info("Mine blocks A-B-C on Node 0")
-        hashC = self.nodes[0].generate(3)[-1]
+        hashC = self.nodes[0].generatetoaddress(3, gen_address(0))[-1]
         assert_equal(self.nodes[0].getblockcount(), 5)
         self.log.info("Mine competing blocks E-F-G on Node 1")
-        hashG = self.nodes[1].generate(3)[-1]
+        hashG = self.nodes[1].generatetoaddress(3, gen_address(1))[-1]
         assert_equal(self.nodes[1].getblockcount(), 5)
         assert hashC != hashG
         self.log.info("Connect nodes and check no reorg occurs")
@@ -105,7 +107,7 @@ class PreciousTest(UnitETestFramework):
         self.nodes[1].preciousblock(hashC)
         assert_equal(self.nodes[1].getbestblockhash(), hashC)
         self.log.info("Mine another block (E-F-G-)H on Node 0 and reorg Node 1")
-        self.nodes[0].generate(1)
+        self.nodes[0].generatetoaddress(1, gen_address(0))
         assert_equal(self.nodes[0].getblockcount(), 6)
         sync_blocks(self.nodes[0:2])
         hashH = self.nodes[0].getbestblockhash()
@@ -114,7 +116,7 @@ class PreciousTest(UnitETestFramework):
         self.nodes[1].preciousblock(hashC)
         assert_equal(self.nodes[1].getbestblockhash(), hashH)
         self.log.info("Mine competing blocks I-J-K-L on Node 2")
-        self.nodes[2].generate(4)
+        self.nodes[2].generatetoaddress(4, gen_address(2))
         assert_equal(self.nodes[2].getblockcount(), 6)
         hashL = self.nodes[2].getbestblockhash()
         self.log.info("Connect nodes and check no reorg occurs")

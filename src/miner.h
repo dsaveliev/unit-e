@@ -1,17 +1,19 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2018 The Bitcoin Core developers
+// Copyright (c) 2009-2019 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef UNITE_MINER_H
 #define UNITE_MINER_H
 
+#include <optional.h>
 #include <primitives/block.h>
 #include <txmempool.h>
 #include <validation.h>
 
-#include <stdint.h>
 #include <memory>
+#include <stdint.h>
+
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
 

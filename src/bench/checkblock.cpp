@@ -21,7 +21,7 @@ namespace block_bench {
 static void DeserializeBlockTest(benchmark::State& state)
 {
     CDataStream stream((const char*)block_bench::test_block,
-            (const char*)&block_bench::test_block[sizeof(block_bench::test_block)],
+            (const char*)block_bench::test_block + sizeof(block_bench::test_block),
             SER_NETWORK, PROTOCOL_VERSION);
     char a = '\0';
     stream.write(&a, 1); // Prevent compaction
@@ -29,7 +29,8 @@ static void DeserializeBlockTest(benchmark::State& state)
     while (state.KeepRunning()) {
         CBlock block;
         stream >> block;
-        assert(stream.Rewind(sizeof(block_bench::test_block)));
+        bool rewound = stream.Rewind(sizeof(block_bench::test_block));
+        assert(rewound);
     }
 }
 
@@ -37,7 +38,7 @@ static void DeserializeAndCheckBlockTest(benchmark::State& state)
 {
     // UNIT-E TODO: This is a synthetic block, it makes sense to change it to a real block later on.
     CDataStream stream((const char*)block_bench::test_block,
-            (const char*)&block_bench::test_block[sizeof(block_bench::test_block)],
+            (const char*)block_bench::test_block + sizeof(block_bench::test_block),
             SER_NETWORK, PROTOCOL_VERSION);
     char a = '\0';
     stream.write(&a, 1); // Prevent compaction
@@ -47,11 +48,13 @@ static void DeserializeAndCheckBlockTest(benchmark::State& state)
     while (state.KeepRunning()) {
         CBlock block; // Note that CBlock caches its checked state, so we need to recreate it here
         stream >> block;
-        assert(stream.Rewind(sizeof(block_bench::test_block)));
+        bool rewound = stream.Rewind(sizeof(block_bench::test_block));
+        assert(rewound);
 
         CValidationState validationState;
         auto validation = staking::LegacyValidationInterface::Old();
-        assert(validation->CheckBlock(block, validationState, chainParams->GetConsensus()));
+        bool checked = validation->CheckBlock(block, validationState, chainParams->GetConsensus());
+        assert(checked);
     }
 }
 

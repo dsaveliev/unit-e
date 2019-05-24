@@ -51,6 +51,7 @@ class BlockchainTest(UnitETestFramework):
         self.num_nodes = 1
         self.setup_clean_chain = True
 
+    # UNIT-E TODO [0.18.0]: Was deleted
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
@@ -66,6 +67,7 @@ class BlockchainTest(UnitETestFramework):
         self.nodes[0].importprunedfunds(genesis_tx_hex, fund_proof)
 
         self.nodes[0].generatetoaddress(200, self.nodes[0].getnewaddress('', 'bech32'))
+        assert_equal(self.nodes[0].getblockchaininfo()['blocks'], 200)
 
         self._test_getblockchaininfo()
         self._test_getchaintxstats()
@@ -142,13 +144,15 @@ class BlockchainTest(UnitETestFramework):
 
         # Test `getchaintxstats` invalid `blockhash`
         assert_raises_rpc_error(-1, "JSON value is not a string as expected", self.nodes[0].getchaintxstats, blockhash=0)
-        assert_raises_rpc_error(-5, "Block not found", self.nodes[0].getchaintxstats, blockhash='0')
+        assert_raises_rpc_error(-8, "blockhash must be of length 64 (not 1, for '0')", self.nodes[0].getchaintxstats, blockhash='0')
+        assert_raises_rpc_error(-8, "blockhash must be hexadecimal string (not 'ZZZ0000000000000000000000000000000000000000000000000000000000000')", self.nodes[0].getchaintxstats, blockhash='ZZZ0000000000000000000000000000000000000000000000000000000000000')
+        assert_raises_rpc_error(-5, "Block not found", self.nodes[0].getchaintxstats, blockhash='0000000000000000000000000000000000000000000000000000000000000000')
         blockhash = self.nodes[0].getblockhash(200)
         self.nodes[0].invalidateblock(blockhash)
         assert_raises_rpc_error(-8, "Block is not in main chain", self.nodes[0].getchaintxstats, blockhash=blockhash)
         self.nodes[0].reconsiderblock(blockhash)
 
-        chaintxstats = self.nodes[0].getchaintxstats(1)
+        chaintxstats = self.nodes[0].getchaintxstats(nblocks=1)
         # 200 txs plus genesis tx
         assert_equal(chaintxstats['txcount'], 201)
 
@@ -227,11 +231,13 @@ class BlockchainTest(UnitETestFramework):
         node = self.nodes[0]
         self.log.info("Test getblockheader")
 
-        assert_raises_rpc_error(-5, "Block not found", node.getblockheader, "nonsense")
+        assert_raises_rpc_error(-8, "hash must be of length 64 (not 8, for 'nonsense')", node.getblockheader, "nonsense")
+        assert_raises_rpc_error(-8, "hash must be hexadecimal string (not 'ZZZ7bb8b1697ea987f3b223ba7819250cae33efacb068d23dc24859824a77844')", node.getblockheader, "ZZZ7bb8b1697ea987f3b223ba7819250cae33efacb068d23dc24859824a77844")
+        assert_raises_rpc_error(-5, "Block not found", node.getblockheader, "0cf7bb8b1697ea987f3b223ba7819250cae33efacb068d23dc24859824a77844")
 
         besthash = node.getbestblockhash()
         secondbesthash = node.getblockhash(199)
-        header = node.getblockheader(besthash)
+        header = node.getblockheader(blockhash=besthash)
 
         assert_equal(header['hash'], besthash)
         assert_equal(header['height'], 200)
@@ -261,12 +267,12 @@ class BlockchainTest(UnitETestFramework):
     def _test_stopatheight(self):
         self.log.info("Test stopatheight")
         assert_equal(self.nodes[0].getblockcount(), 200)
-        self.nodes[0].generate(6)
+        self.nodes[0].generatetoaddress(6, self.nodes[0].get_deterministic_priv_key().address)
         assert_equal(self.nodes[0].getblockcount(), 206)
         self.log.debug('Node should not stop at this height')
         assert_raises(subprocess.TimeoutExpired, lambda: self.nodes[0].process.wait(timeout=3))
         try:
-            self.nodes[0].generate(1)
+            self.nodes[0].generatetoaddress(1, self.nodes[0].get_deterministic_priv_key().address)
         except (ConnectionError, http.client.BadStatusLine):
             pass  # The node already shut down before response
         self.log.debug('Node should stop at this height...')
@@ -307,7 +313,7 @@ class BlockchainTest(UnitETestFramework):
 
         def assert_waitforheight(height, timeout=2):
             assert_equal(
-                node.waitforblockheight(height, timeout)['height'],
+                node.waitforblockheight(height=height, timeout=timeout)['height'],
                 current_height)
 
         assert_waitforheight(0)

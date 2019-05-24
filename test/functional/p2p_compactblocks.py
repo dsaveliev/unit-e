@@ -6,7 +6,7 @@
 
 Version 1 compact blocks are non-segwit and they are not supported
 """
-
+from decimal import Decimal
 import random
 
 from test_framework.blocktools import (
@@ -53,7 +53,7 @@ from test_framework.script import CScript, OP_TRUE, OP_DROP
 from test_framework.test_framework import UnitETestFramework
 from test_framework.util import assert_equal, assert_in, assert_not_equal, satoshi_round, sync_blocks, wait_until, get_unspent_coins
 
-# TestP2PConn: A peer we use to send messages to unit-e, and store responses.
+# TestP2PConn: A peer we use to send messages to bitcoind, and store responses.
 class TestP2PConn(P2PInterface):
     def __init__(self):
         super().__init__()
@@ -240,7 +240,7 @@ class CompactBlocksTest(UnitETestFramework):
 
         # Now try a SENDCMPCT message with too-high version
         sendcmpct = msg_sendcmpct()
-        sendcmpct.version = preferred_version+1
+        sendcmpct.version = preferred_version + 1
         sendcmpct.announce = True
         test_node.send_and_ping(sendcmpct)
         check_announcement_of_new_block(node, test_node, lambda p: "cmpctblock" not in p.last_message)
@@ -277,7 +277,7 @@ class CompactBlocksTest(UnitETestFramework):
         check_announcement_of_new_block(node, test_node, lambda p: "cmpctblock" in p.last_message)
 
         # Try one more time, after sending a version-1, announce=false message.
-        sendcmpct.version = preferred_version-1
+        sendcmpct.version = preferred_version - 1
         sendcmpct.announce = False
         test_node.send_and_ping(sendcmpct)
         check_announcement_of_new_block(node, test_node, lambda p: "cmpctblock" in p.last_message)
@@ -335,7 +335,7 @@ class CompactBlocksTest(UnitETestFramework):
             node.sendtoaddress(address, 0.1)
 
         if use_witness_address:
-            assert segwit_tx_generated # check that our test is not broken
+            assert segwit_tx_generated  # check that our test is not broken
 
         # Wait until we've seen the block announcement for the resulting tip
         tip = int(node.getbestblockhash(), 16)
@@ -349,7 +349,7 @@ class CompactBlocksTest(UnitETestFramework):
         block_hash = int(node.generate(1)[0], 16)
 
         # Store the raw block in our internal format.
-        block = FromHex(CBlock(), node.getblock("%02x" % block_hash, False))
+        block = FromHex(CBlock(), node.getblock("%064x" % block_hash, False))
         for tx in block.vtx:
             tx.calc_sha256()
         block.rehash()
@@ -448,9 +448,9 @@ class CompactBlocksTest(UnitETestFramework):
             comp_block.nonce = 0
             [k0, k1] = comp_block.get_siphash_keys()
             coinbase_hash = block.vtx[0].sha256
-            coinbase_hash = block.vtx[0].calc_sha256(True)
-            comp_block.shortids = [
-                    calculate_shortid(k0, k1, coinbase_hash) ]
+            if version == 2:
+                coinbase_hash = block.vtx[0].calc_sha256(True)
+            comp_block.shortids = [calculate_shortid(k0, k1, coinbase_hash)]
             test_node.send_and_ping(msg_cmpctblock(comp_block.to_p2p()))
             assert_equal(int(node.getbestblockhash(), 16), block.hashPrevBlock)
             # Expect a getblocktxn message.
@@ -691,7 +691,7 @@ class CompactBlocksTest(UnitETestFramework):
 
         # Generate an old compactblock, and verify that it's not accepted.
         cur_height = node.getblockcount()
-        hashPrevBlock = int(node.getblockhash(cur_height-5), 16)
+        hashPrevBlock = int(node.getblockhash(cur_height - 5), 16)
         block = self.build_block_on_tip(node)
         block.hashPrevBlock = hashPrevBlock
         block.solve()
