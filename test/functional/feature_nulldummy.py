@@ -8,6 +8,7 @@ Connect to a single node.
 [Policy/Consensus] Check that NULLDUMMY compliant transactions are accepted.
 [Policy/Consensus] Check that the new NULLDUMMY rules are enforced
 """
+import time
 
 from test_framework.blocktools import (
     create_block,
@@ -26,8 +27,6 @@ from test_framework.util import (
     bytes_to_hex_str,
     get_unspent_coins,
 )
-
-import time
 
 NULLDUMMY_ERROR = "non-mandatory-script-verify-flag (Dummy CHECKMULTISIG argument must be zero) (code 64)"
 
@@ -56,15 +55,16 @@ class NULLDUMMYTest(UnitETestFramework):
 
         self.address = self.nodes[0].getnewaddress()
         self.ms_address = self.nodes[0].addmultisigaddress(1, [self.address])['address']
-        self.wit_address = self.nodes[0].addwitnessaddress(self.address)
+        self.wit_address = self.nodes[0].getnewaddress(address_type='p2sh-segwit')
         self.wit_ms_address = self.nodes[0].addmultisigaddress(1, [self.address], '', 'p2sh-segwit')['address']
 
         p2p = self.nodes[0].add_p2p_connection(P2PInterface())
 
-        self.coinbase_blocks = self.nodes[0].generate(2) # Block 2
+        self.coinbase_blocks = self.nodes[0].generate(2)  # Block 2
         coinbase_txid = []
         for i in self.coinbase_blocks:
             coinbase_txid.append(self.nodes[0].getblock(i)['tx'][0])
+        self.nodes[0].generate(427)  # Block 429
         self.lastblockhash = self.nodes[0].getbestblockhash()
         self.tip = int("0x" + self.lastblockhash, 0)
         self.lastblockheight = self.nodes[0].getblockcount()

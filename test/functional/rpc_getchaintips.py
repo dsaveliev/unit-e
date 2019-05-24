@@ -19,26 +19,27 @@ class GetChainTipsTest (UnitETestFramework):
         self.extra_args = [[DISABLE_FINALIZATION]] * 4
         self.setup_clean_chain = True
 
+    # UNIT-E TODO [0.18.0]: Was deleted
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
-    def run_test (self):
+    def run_test(self):
         self.setup_stake_coins(self.nodes[0], self.nodes[2])
 
         # start with 200 blocks
         self.nodes[0].generatetoaddress(200, self.nodes[0].getnewaddress('', 'bech32'))
         self.sync_all()
 
-        tips = self.nodes[0].getchaintips ()
-        assert_equal (len (tips), 1)
-        assert_equal (tips[0]['branchlen'], 0)
-        assert_equal (tips[0]['height'], 200)
-        assert_equal (tips[0]['status'], 'active')
+        tips = self.nodes[0].getchaintips()
+        assert_equal(len(tips), 1)
+        assert_equal(tips[0]['branchlen'], 0)
+        assert_equal(tips[0]['height'], 200)
+        assert_equal(tips[0]['status'], 'active')
 
         # Split the network and build two chains of different lengths.
         self.split_network()
-        self.nodes[0].generate(10)
-        self.nodes[2].generate(20)
+        self.nodes[0].generatetoaddress(10, self.nodes[0].get_deterministic_priv_key().address)
+        self.nodes[2].generatetoaddress(20, self.nodes[2].get_deterministic_priv_key().address)
         self.sync_all([self.nodes[:2], self.nodes[2:]])
 
         tips = self.nodes[1].getchaintips ()

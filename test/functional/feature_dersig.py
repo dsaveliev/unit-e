@@ -12,11 +12,15 @@ from test_framework.messages import msg_block
 from test_framework.mininode import mininode_lock, P2PInterface
 from test_framework.script import CScript
 from test_framework.test_framework import UnitETestFramework
-from test_framework.util import assert_equal, bytes_to_hex_str, get_unspent_coins, wait_until
+from test_framework.util import (
+    assert_equal,
+    bytes_to_hex_str,
+    get_unspent_coins,
+    wait_until,
+)
 
 # Reject codes that we might receive in this test
 REJECT_INVALID = 16
-REJECT_OBSOLETE = 17
 REJECT_NONSTANDARD = 64
 
 # A canonical signature consists of:
@@ -40,8 +44,12 @@ def unDERify(tx):
 class BIP66Test(UnitETestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-whitelist=127.0.0.1']]
+        self.extra_args = [['-whitelist=127.0.0.1', '-par=1', '-enablebip61']]  # Use only one script thread to get the exact reject reason for testing
         self.setup_clean_chain = True
+        self.rpc_timeout = 120
+
+    def skip_test_if_missing_module(self):
+        self.skip_if_no_wallet()
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -80,24 +88,16 @@ class BIP66Test(UnitETestFramework):
         block.compute_merkle_trees()
         block.solve()
 
-        self.nodes[0].p2p.send_and_ping(msg_block(block))
-        assert_equal(int(self.nodes[0].getbestblockhash(), 16), int(tip, 16))
+        with self.nodes[0].assert_debug_log(expected_msgs=['CheckInputs on {} failed with non-mandatory-script-verify-flag (Non-canonical DER signature)'.format(block.vtx[-1].hash)]):
+            self.nodes[0].p2p.send_and_ping(msg_block(block))
+            assert_equal(int(self.nodes[0].getbestblockhash(), 16), int(tip, 16))
+            self.nodes[0].p2p.sync_with_ping()
 
         wait_until(lambda: "reject" in self.nodes[0].p2p.last_message.keys(), lock=mininode_lock)
         with mininode_lock:
-            # We can receive different reject messages depending on whether
-            # unit-e is running with multiple script check threads. If script
-            # check threads are not in use, then transaction script validation
-            # happens sequentially, and unit-e produces more specific reject
-            # reasons.
             assert self.nodes[0].p2p.last_message["reject"].code in [REJECT_INVALID, REJECT_NONSTANDARD]
             assert_equal(self.nodes[0].p2p.last_message["reject"].data, block.sha256)
-            if self.nodes[0].p2p.last_message["reject"].code == REJECT_INVALID:
-                # Generic rejection when a block is invalid
-                reject_reason = self.nodes[0].p2p.last_message["reject"].reason
-                assert_equal(reject_reason, b'block-validation-failed')
-            else:
-                assert b'Non-canonical DER signature' in self.nodes[0].p2p.last_message["reject"].reason
+            assert b'Non-canonical DER signature' in self.nodes[0].p2p.last_message["reject"].reason
 
         self.log.info("Test that a version 3 block with a DERSIG-compliant transaction is accepted")
         block.vtx[1] = create_transaction(self.nodes[0], self.coinbase_txids[0], self.nodeaddress, amount=1.0)

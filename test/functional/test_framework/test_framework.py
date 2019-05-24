@@ -33,7 +33,6 @@ from .util import (
     get_datadir_path,
     initialize_datadir,
     p2p_port,
-    set_node_times,
     sync_blocks,
     sync_mempools,
     connect_nodes,
@@ -44,6 +43,7 @@ from .messages import (
     CTransaction,
     TxType,
 )
+
 
 class TestStatus(Enum):
     PASSED = 1
@@ -58,14 +58,8 @@ COINBASE_MATURITY = 100  # Should match the value from consensus.h
 STAKE_SPLIT_THRESHOLD = 1000  # Should match the value from blockchain_parameters.cpp
 PROPOSER_REWARD = Decimal('3.75')  # Will not decrease as tests don't generate enough blocks
 
-BLOCK_HEADER_LENGTH = 140
+TMPDIR_PREFIX = "unite_func_test_"
 
-# This parameter simulates the scenario that the node "never" reaches finalization.
-# The purpose of it is to adapt Bitcoin tests to Unit-e which contradict with the finalization
-# so the existing tests will perform the check within one dynasty.
-# When this parameter is used, framework must be configured with `setup_clean_chain = True`
-# to prevent using the cache which was generated with the finalization enabled.
-DISABLE_FINALIZATION = '-esperanzaconfig={"epochLength": 99999}'
 
 class SkipTest(Exception):
     """This exception is raised to skip a test"""
@@ -73,6 +67,12 @@ class SkipTest(Exception):
     def __init__(self, message):
         self.message = message
 
+# This parameter simulates the scenario that the node "never" reaches finalization.
+# The purpose of it is to adapt Bitcoin tests to Unit-e which contradict with the finalization
+# so the existing tests will perform the check within one dynasty.
+# When this parameter is used, framework must be configured with `setup_clean_chain = True`
+# to prevent using the cache which was generated with the finalization enabled.
+DISABLE_FINALIZATION = '-esperanzaconfig={"epochLength": 99999}'
 
 class UnitETestMetaClass(type):
     """Metaclass for UnitETestFramework.
@@ -115,8 +115,7 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
         self.setup_clean_chain = False
         self.nodes = []
         self.network_thread = None
-        self.mocktime = 0
-        self.rpc_timewait = 60  # Wait for up to 60 seconds for the RPC server to respond
+        self.rpc_timeout = 60  # Wait for up to 60 seconds for the RPC server to respond
         self.supports_cli = False
         self.bind_to_localhost_only = True
         self.set_test_params()
@@ -159,6 +158,8 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
                             help="Attach a python debugger if test fails")
         parser.add_argument("--usecli", dest="usecli", default=False, action="store_true",
                             help="use unit-e-cli instead of RPC for all commands")
+        parser.add_argument("--perf", dest="perf", default=False, action="store_true",
+                            help="profile running nodes with perf for the duration of the test")
         self.add_options(parser)
         self.options = parser.parse_args()
 
@@ -170,6 +171,7 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
 
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile))
+        self.config = config
         self.options.unit_e = os.getenv("UNIT_E", default=config["environment"]["BUILDDIR"] + '/src/unit-e' + config["environment"]["EXEEXT"])
         self.options.unit_e_cli = os.getenv("UNIT_E_CLI", default=config["environment"]["BUILDDIR"] + '/src/unit-e-cli' + config["environment"]["EXEEXT"])
 
@@ -184,7 +186,7 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             self.options.tmpdir = os.path.abspath(self.options.tmpdir)
             os.makedirs(self.options.tmpdir, exist_ok=False)
         else:
-            self.options.tmpdir = tempfile.mkdtemp(prefix="test")
+            self.options.tmpdir = tempfile.mkdtemp(prefix=TMPDIR_PREFIX)
         self._start_logging()
 
         self.log.debug('Setting up network thread')
@@ -194,12 +196,13 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
         success = TestStatus.FAILED
 
         try:
-            if self.options.usecli and not self.supports_cli:
-                raise SkipTest("--usecli specified but test does not support using CLI")
+            if self.options.usecli:
+                if not self.supports_cli:
+                    raise SkipTest("--usecli specified but test does not support using CLI")
+                self.skip_if_no_cli()
             self.skip_test_if_missing_module()
             self.setup_chain()
             self.setup_network()
-            self.import_deterministic_coinbase_privkeys()
             self.run_test()
             success = TestStatus.PASSED
         except JSONRPCException as e:
@@ -231,11 +234,20 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
                 node.cleanup_on_exit = False
             self.log.info("Note: unit-e daemons were not stopped and may still be running")
 
-        if not self.options.nocleanup and not self.options.noshutdown and success != TestStatus.FAILED:
+        should_clean_up = (
+            not self.options.nocleanup and
+            not self.options.noshutdown and
+            success != TestStatus.FAILED and
+            not self.options.perf
+        )
+        if should_clean_up:
             self.log.info("Cleaning up {} on exit".format(self.options.tmpdir))
             cleanup_tree_on_exit = True
+        elif self.options.perf:
+            self.log.warning("Not cleaning up dir {} due to perf data".format(self.options.tmpdir))
+            cleanup_tree_on_exit = False
         else:
-            self.log.warning("Not cleaning up dir %s" % self.options.tmpdir)
+            self.log.warning("Not cleaning up dir {}".format(self.options.tmpdir))
             cleanup_tree_on_exit = False
 
         if success == TestStatus.PASSED:
@@ -293,6 +305,19 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             extra_args = self.extra_args
         self.add_nodes(self.num_nodes, extra_args)
         self.start_nodes()
+        self.import_deterministic_coinbase_privkeys()
+        if not self.setup_clean_chain:
+            for n in self.nodes:
+                assert_equal(n.getblockchaininfo()["blocks"], 199)
+            # To ensure that all nodes are out of IBD, the most recent block
+            # must have a timestamp not too old (see IsInitialBlockDownload()).
+            self.log.debug('Generate a block with current time')
+            block_hash = self.nodes[0].generate(1)[0]
+            block = self.nodes[0].getblock(blockhash=block_hash, verbosity=0)
+            for n in self.nodes:
+                n.submitblock(block)
+                chain_info = n.getblockchaininfo()
+                assert_equal(chain_info["blocks"], 200)
 
     def setup_stake_coins(self, *args, rescan=True, offset=0):
         for i, node in enumerate(args):
@@ -301,9 +326,6 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             node.importmasterkey(node.mnemonics, "", rescan)
 
     def import_deterministic_coinbase_privkeys(self):
-        if self.setup_clean_chain:
-            return
-
         for n in self.nodes:
             wallets = n.listwallets()
             w = n.get_wallet_rpc(wallets[0])
@@ -313,7 +335,7 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
                 assert str(e).startswith('Method not found')
                 continue
 
-            w.importprivkey(n.get_deterministic_priv_key()[1])
+            w.importprivkey(privkey=n.get_deterministic_priv_key().key, label='coinbase')
 
     def run_test(self):
         """Tests must override this method to define test logic"""
@@ -322,7 +344,10 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
     # Public helper methods. These can be accessed by the subclass test scripts.
 
     def add_nodes(self, num_nodes, extra_args=None, *, rpchost=None, binary=None):
-        """Instantiate TestNode objects"""
+        """Instantiate TestNode objects.
+
+        Should only be called once after the nodes have been specified in
+        set_test_params()."""
         if self.bind_to_localhost_only:
             extra_confs = [["bind=127.0.0.1"]] * num_nodes
         else:
@@ -336,7 +361,20 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
         assert_equal(len(binary), num_nodes)
         for i in range(num_nodes):
             print("Starting node " + str(i) + " with args: " + ' '.join(str(e) for e in extra_args[i]))
-            self.nodes.append(TestNode(i, get_datadir_path(self.options.tmpdir, i), rpchost=rpchost, timewait=self.rpc_timewait, unit_e=binary[i], unit_e_cli=self.options.unit_e_cli, mocktime=self.mocktime, coverage_dir=self.options.coveragedir, extra_conf=extra_confs[i], extra_args=extra_args[i], use_cli=self.options.usecli))
+            self.nodes.append(TestNode(
+                i,
+                get_datadir_path(self.options.tmpdir, i),
+                rpchost=rpchost,
+                timewait=self.rpc_timeout,
+                unit_e=binary[i],
+                unit_e_cli=self.options.unit_e_cli,
+                coverage_dir=self.options.coveragedir,
+                cwd=self.options.tmpdir,
+                extra_conf=extra_confs[i],
+                extra_args=extra_args[i],
+                use_cli=self.options.usecli,
+                start_perf=self.options.perf,
+            ))
 
     def start_node(self, i, *args, **kwargs):
         """Start a unit-e"""
@@ -523,21 +561,6 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             proposer.generatetoaddress(1, proposer.getnewaddress('', 'bech32'))
         return votes
 
-    def enable_mocktime(self):
-        """Enable mocktime for the script.
-
-        mocktime may be needed for scripts that use the cached version of the
-        blockchain.  If the cached version of the blockchain is used without
-        mocktime then the mempools will not sync due to IBD.
-
-        For backward compatibility of the python scripts with previous
-        versions of the cache, this helper function sets mocktime to Jan 1,
-        2014 + (201 * 10 * 60)"""
-        self.mocktime = 1388534400 + (201 * 10 * 60)
-
-    def disable_mocktime(self):
-        self.mocktime = 0
-
     # Private helper methods. These should not be accessed by the subclass test scripts.
 
     def _start_logging(self):
@@ -571,7 +594,7 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
     def _initialize_chain(self):
         """Initialize a pre-mined blockchain for use by the test.
 
-        Create a cache of a 200-block-long chain (with wallet) for MAX_NODES
+        Create a cache of a 199-block-long chain (with wallet) for MAX_NODES
         Afterward, create num_nodes copies from the cache."""
 
         assert self.num_nodes <= MAX_NODES
@@ -592,10 +615,21 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             # Create cache directories, run unit-e daemons:
             for i in range(MAX_NODES):
                 datadir = initialize_datadir(self.options.cachedir, i)
-                args = [self.options.unit_e, "-datadir=" + datadir]
+                args = [self.options.unit_e, "-datadir=" + datadir, '-disablewallet']
                 if i > 0:
                     args.append("-connect=127.0.0.1:" + str(p2p_port(0)))
-                self.nodes.append(TestNode(i, get_datadir_path(self.options.cachedir, i), extra_conf=["bind=127.0.0.1"], extra_args=[], rpchost=None, timewait=self.rpc_timewait, unit_e=self.options.unit_e, unit_e_cli=self.options.unit_e_cli, mocktime=self.mocktime, coverage_dir=None))
+                self.nodes.append(TestNode(
+                    i,
+                    get_datadir_path(self.options.cachedir, i),
+                    extra_conf=["bind=127.0.0.1"],
+                    extra_args=[],
+                    rpchost=None,
+                    timewait=self.rpc_timeout,
+                    unit_e=self.options.unit_e,
+                    unit_e_cli=self.options.unit_e_cli,
+                    coverage_dir=None,
+                    cwd=self.options.tmpdir,
+                ))
                 self.nodes[i].args = args
                 self.start_node(i)
 
@@ -603,44 +637,40 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             for node in self.nodes:
                 node.wait_for_rpc_connection()
 
-            # Create a 200-block-long chain; each of the 4 first nodes
+            # Create a 199-block-long chain; each of the 4 first nodes
             # gets 25 mature blocks and 25 immature.
-            # Note: To preserve compatibility with older versions of
-            # initialize_chain, only 4 nodes will generate coins.
+            # The 4th node gets only 24 immature blocks so that the very last
+            # block in the cache does not age too much (have an old tip age).
+            # This is needed so that we are out of IBD when the test starts,
+            # see the tip age check in IsInitialBlockDownload().
             #
             # We need to initialize also nodes' wallets with some genesis funds
             # and we use the last 4 addresses in the genesis to do so.
-            #
-            # Blocks are created with timestamps 10 minutes apart
-            # starting from 2010 minutes in the past
 
             for peer in range(4):
                 self.nodes[peer].importmasterkey(regtest_mnemonics[-(peer+1)]['mnemonics'])
                 self.nodes[peer].importprivkey(self.nodes[peer].get_deterministic_priv_key()[1])
 
-            self.enable_mocktime()
-            block_time = self.mocktime - (201 * 10 * 60)
-            for i in range(2):
-                for peer in range(4):
-                    for j in range(25):
-                        set_node_times(self.nodes, block_time)
-                        self.nodes[peer].generatetoaddress(1, self.nodes[peer].get_deterministic_priv_key()[0])
-                        block_time += 10 * 60
-                    # Must sync before next peer starts generating blocks
-                    sync_blocks(self.nodes)
+            for i in range(8):
+                self.nodes[0].generatetoaddress(25 if i != 7 else 24, self.nodes[i % 4].get_deterministic_priv_key().address)
+            sync_blocks(self.nodes)
+
+            for n in self.nodes:
+                assert_equal(n.getblockchaininfo()["blocks"], 199)
 
             # Shut them down, and clean up cache directories:
             self.stop_nodes()
             self.nodes = []
-            self.disable_mocktime()
 
             def cache_path(n, *paths):
                 return os.path.join(get_datadir_path(self.options.cachedir, n), "regtest", *paths)
 
             for i in range(MAX_NODES):
-                shutil.rmtree(cache_path(i, 'wallets'))  # Remove cache generators' wallets dir
+                # UNIT-E TODO [0.18.0]: Which one should we use?
+                os.rmdir(cache_path(i, 'wallets'))  # Remove empty wallets dir
+                # shutil.rmtree(cache_path(i, 'wallets'))  # Remove cache generators' wallets dir
                 for entry in os.listdir(cache_path(i)):
-                    if entry not in ['wallets', 'chainstate', 'blocks', 'snapshots', 'finalization', 'votes']:
+                    if entry not in ['chainstate', 'blocks', 'snapshots', 'finalization', 'votes']:
                         os.remove(cache_path(i, entry))
 
         for i in range(self.num_nodes):
@@ -664,10 +694,10 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
         except ImportError:
             raise SkipTest("python3-zmq module not available.")
 
-    def skip_if_no_united_zmq(self):
-        """Skip the running test if united has not been compiled with zmq support."""
+    def skip_if_no_unit_e_zmq(self):
+        """Skip the running test if unit-e has not been compiled with zmq support."""
         if not self.is_zmq_compiled():
-            raise SkipTest("united has not been built with zmq enabled.")
+            raise SkipTest("unit-e has not been built with zmq enabled.")
 
     def skip_if_no_wallet(self):
         """Skip the running test if wallet has not been compiled."""
@@ -675,16 +705,19 @@ class UnitETestFramework(metaclass=UnitETestMetaClass):
             raise SkipTest("wallet has not been compiled.")
 
     def skip_if_no_cli(self):
-        """Skip the running test if unite-cli has not been compiled."""
+        """Skip the running test if unit-e-cli has not been compiled."""
         if not self.is_cli_compiled():
-            raise SkipTest("unite-cli has not been compiled.")
+            raise SkipTest("unit-e-cli has not been compiled.")
 
     def is_cli_compiled(self):
-        """Checks whether unite-cli was compiled."""
+        """Checks whether unit-e-cli was compiled."""
         config = configparser.ConfigParser()
         config.read_file(open(self.options.configfile))
 
-        return config["components"].getboolean("ENABLE_UTILS")
+        # UNIT-E TODO [0.18.0]: They just got back to the version from 2014 year:
+        # https://github.com/bitcoin/bitcoin/blob/0.18/test/functional/test_framework/test_framework.py#L559
+        # return config["components"].getboolean("ENABLE_UTILS")
+        return config["components"].getboolean("ENABLE_CLI")
 
     def is_wallet_compiled(self):
         """Checks whether the wallet module was compiled."""

@@ -147,6 +147,7 @@ class AcceptBlockTest(UnitETestFramework):
         self.num_nodes = 2
         self.extra_args = [[], ["-minimumchainwork=0x10"]]
 
+    # UNIT-E TODO [0.18.0]: Was deleted
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
@@ -175,8 +176,8 @@ class AcceptBlockTest(UnitETestFramework):
         utxo_manager.available_outputs = genesis_utxo
 
         self.log.info("1. Have nodes mine a block (leave IBD)")
-        [ n.generate(1) for n in self.nodes ]
-        tips = [ int("0x" + n.getbestblockhash(), 0) for n in self.nodes ]
+        [n.generatetoaddress(1, n.get_deterministic_priv_key().address) for n in self.nodes]
+        tips = [int("0x" + n.getbestblockhash(), 0) for n in self.nodes]
         tip_snapshot_meta = get_tip_snapshot_meta(self.nodes[0])
 
         self.log.info("2. Send one block that builds on each tip. This should be accepted by node0.")

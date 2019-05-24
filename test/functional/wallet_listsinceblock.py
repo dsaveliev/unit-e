@@ -9,7 +9,6 @@ from test_framework.util import assert_equal, assert_array_result, assert_raises
 from test_framework.blocktools import generate
 from test_framework.mininode import P2PInterface
 
-
 class ListSinceBlockTest (UnitETestFramework):
     def set_test_params(self):
         self.num_nodes = 4
@@ -61,8 +60,10 @@ class ListSinceBlockTest (UnitETestFramework):
                                 "42759cde25462784395a337460bde75f58e73d3f08bd31fdc3507cbac856a2c4")
         assert_raises_rpc_error(-5, "Block not found", self.nodes[0].listsinceblock,
                                 "0000000000000000000000000000000000000000000000000000000000000000")
-        assert_raises_rpc_error(-5, "Block not found", self.nodes[0].listsinceblock,
+        assert_raises_rpc_error(-8, "blockhash must be of length 64 (not 11, for 'invalid-hex')", self.nodes[0].listsinceblock,
                                 "invalid-hex")
+        assert_raises_rpc_error(-8, "blockhash must be hexadecimal string (not 'Z000000000000000000000000000000000000000000000000000000000000000')", self.nodes[0].listsinceblock,
+                                "Z000000000000000000000000000000000000000000000000000000000000000")
 
     def test_reorg(self):
         '''
